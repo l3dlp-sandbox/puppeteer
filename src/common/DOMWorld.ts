@@ -501,37 +501,37 @@ export class DOMWorld {
   ): Promise<void> {
     const handle = await this.$(selector);
     assert(handle, 'No node found for selector: ' + selector);
-    await handle!.click(options);
-    await handle!.dispose();
+    await handle.click(options);
+    await handle.dispose();
   }
 
   async focus(selector: string): Promise<void> {
     const handle = await this.$(selector);
     assert(handle, 'No node found for selector: ' + selector);
-    await handle!.focus();
-    await handle!.dispose();
+    await handle.focus();
+    await handle.dispose();
   }
 
   async hover(selector: string): Promise<void> {
     const handle = await this.$(selector);
     assert(handle, 'No node found for selector: ' + selector);
-    await handle!.hover();
-    await handle!.dispose();
+    await handle.hover();
+    await handle.dispose();
   }
 
   async select(selector: string, ...values: string[]): Promise<string[]> {
     const handle = await this.$(selector);
     assert(handle, 'No node found for selector: ' + selector);
-    const result = await handle!.select(...values);
-    await handle!.dispose();
+    const result = await handle.select(...values);
+    await handle.dispose();
     return result;
   }
 
   async tap(selector: string): Promise<void> {
     const handle = await this.$(selector);
     assert(handle, 'No node found for selector: ' + selector);
-    await handle!.tap();
-    await handle!.dispose();
+    await handle.tap();
+    await handle.dispose();
   }
 
   async type(
@@ -541,8 +541,8 @@ export class DOMWorld {
   ): Promise<void> {
     const handle = await this.$(selector);
     assert(handle, 'No node found for selector: ' + selector);
-    await handle!.type(text, options);
-    await handle!.dispose();
+    await handle.type(text, options);
+    await handle.dispose();
   }
 
   async waitForSelector(
@@ -981,6 +981,7 @@ async function waitForPredicatePageFunction(
   if (polling === 'raf') return await pollRaf();
   if (polling === 'mutation') return await pollMutation();
   if (typeof polling === 'number') return await pollInterval(polling);
+  assert(false);
 
   /**
    * @returns {!Promise<*>}
@@ -1023,7 +1024,7 @@ async function waitForPredicatePageFunction(
     await onRaf();
     return result;
 
-    async function onRaf(): Promise<unknown> {
+    async function onRaf(): Promise<void> {
       if (timedOut) {
         fulfill();
         return;
@@ -1042,7 +1043,7 @@ async function waitForPredicatePageFunction(
     await onTimeout();
     return result;
 
-    async function onTimeout(): Promise<unknown> {
+    async function onTimeout(): Promise<void> {
       if (timedOut) {
         fulfill();
         return;

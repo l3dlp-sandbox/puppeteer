@@ -44,7 +44,7 @@ export interface TracingOptions {
 export class Tracing {
   _client: CDPSession;
   _recording = false;
-  _path = '';
+  _path?: string;
 
   /**
    * @internal
@@ -79,7 +79,7 @@ export class Tracing {
       'disabled-by-default-v8.cpu_profiler',
     ];
     const {
-      path = null,
+      path,
       screenshots = false,
       categories = defaultCategories,
     } = options;
@@ -107,10 +107,10 @@ export class Tracing {
    * @returns Promise which resolves to buffer with trace data.
    */
   async stop(): Promise<Buffer> {
-    let fulfill: (value: Buffer) => void;
+    let resolve: (value: Buffer) => void;
     let reject: (err: Error) => void;
     const contentPromise = new Promise<Buffer>((x, y) => {
-      fulfill = x;
+      resolve = x;
       reject = y;
     });
     this._client.once('Tracing.tracingComplete', async (event) => {
@@ -120,9 +120,14 @@ export class Tracing {
           event.stream
         );
         const buffer = await helper.getReadableAsBuffer(readable, this._path);
-        fulfill(buffer);
+        assert(buffer);
+        resolve(buffer);
       } catch (error) {
-        reject(error);
+        if (error instanceof Error) {
+          reject(error);
+        } else {
+          reject(new Error(`Unknown error: ${error}`));
+        }
       }
     });
     await this._client.send('Tracing.end');

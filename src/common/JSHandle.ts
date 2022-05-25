@@ -114,7 +114,7 @@ const applyOffsetsToQuad = (
  *
  * @public
  */
-export class JSHandle<HandleObjectType = unknown> {
+export class JSHandle<HandleObjectType = any> {
   /**
    * @internal
    */
@@ -202,8 +202,8 @@ export class JSHandle<HandleObjectType = unknown> {
    */
   async getProperty(propertyName: string): Promise<JSHandle> {
     const objectHandle = await this.evaluateHandle(
-      (object: Element, propertyName: string) => {
-        const result = { __proto__: null };
+      (object: Element, propertyName: keyof Element) => {
+        const result: Record<string, unknown> = { __proto__: null };
         result[propertyName] = object[propertyName];
         return result;
       },
@@ -234,13 +234,14 @@ export class JSHandle<HandleObjectType = unknown> {
    * ```
    */
   async getProperties(): Promise<Map<string, JSHandle>> {
+    assert(this._remoteObject.objectId);
     const response = await this._client.send('Runtime.getProperties', {
       objectId: this._remoteObject.objectId,
       ownProperties: true,
     });
     const result = new Map<string, JSHandle>();
     for (const property of response.result) {
-      if (!property.enumerable) continue;
+      if (!property.enumerable || !property.value) continue;
       result.set(property.name, createJSHandle(this._context, property.value));
     }
     return result;
@@ -402,6 +403,7 @@ export class ElementHandle<
     } = {}
   ): Promise<ElementHandle | null> {
     const frame = this._context.frame();
+    if (!frame) return null;
     const secondaryContext = await frame._secondaryWorld.executionContext();
     const adoptedRoot = await secondaryContext._adoptElementHandle(this);
     const handle = await frame._secondaryWorld.waitForSelector(selector, {
@@ -475,6 +477,7 @@ export class ElementHandle<
     } = {}
   ): Promise<ElementHandle | null> {
     const frame = this._context.frame();
+    if (!frame) return null;
     const secondaryContext = await frame._secondaryWorld.executionContext();
     const adoptedRoot = await secondaryContext._adoptElementHandle(this);
     xpath = xpath.startsWith('//') ? '.' + xpath : xpath;
@@ -494,7 +497,7 @@ export class ElementHandle<
     return result;
   }
 
-  asElement(): ElementHandle<ElementType> | null {
+  override asElement(): ElementHandle<ElementType> | null {
     return this;
   }
 
@@ -534,7 +537,7 @@ export class ElementHandle<
       }
       const visibleRatio = await new Promise((resolve) => {
         const observer = new IntersectionObserver((entries) => {
-          resolve(entries[0].intersectionRatio);
+          resolve(entries[0]!.intersectionRatio);
           observer.disconnect();
         });
         observer.observe(element);
@@ -560,14 +563,15 @@ export class ElementHandle<
   ): Promise<{ offsetX: number; offsetY: number }> {
     let offsetX = 0;
     let offsetY = 0;
-    while (frame.parentFrame()) {
-      const parent = frame.parentFrame();
-      if (!frame.isOOPFrame()) {
-        frame = parent;
+    let currentFrame: Frame | null = frame;
+    while (currentFrame && currentFrame.parentFrame()) {
+      const parent = currentFrame.parentFrame();
+      if (!currentFrame.isOOPFrame() || !parent) {
+        currentFrame = parent;
         continue;
       }
       const { backendNodeId } = await parent._client.send('DOM.getFrameOwner', {
-        frameId: frame._id,
+        frameId: currentFrame._id,
       });
       const result = await parent._client.send('DOM.getBoxModel', {
         backendNodeId: backendNodeId,
@@ -577,9 +581,9 @@ export class ElementHandle<
       }
       const contentBoxQuad = result.model.content;
       const topLeftCorner = this._fromProtocolQuad(contentBoxQuad)[0];
-      offsetX += topLeftCorner.x;
-      offsetY += topLeftCorner.y;
-      frame = parent;
+      offsetX += topLeftCorner!.x;
+      offsetY += topLeftCorner!.y;
+      currentFrame = parent;
     }
     return { offsetX, offsetY };
   }
@@ -612,7 +616,7 @@ export class ElementHandle<
       .filter((quad) => computeQuadArea(quad) > 1);
     if (!quads.length)
       throw new Error('Node is either not clickable or not an HTMLElement');
-    const quad = quads[0];
+    const quad = quads[0]!;
     if (offset) {
       // Return the point of the first quad identified by offset.
       let minX = Number.MAX_SAFE_INTEGER;
@@ -659,10 +663,10 @@ export class ElementHandle<
 
   private _fromProtocolQuad(quad: number[]): Array<{ x: number; y: number }> {
     return [
-      { x: quad[0], y: quad[1] },
-      { x: quad[2], y: quad[3] },
-      { x: quad[4], y: quad[5] },
-      { x: quad[6], y: quad[7] },
+      { x: quad[0]!, y: quad[1]! },
+      { x: quad[2]!, y: quad[3]! },
+      { x: quad[4]!, y: quad[5]! },
+      { x: quad[6]!, y: quad[7]! },
     ];
   }
 
@@ -789,7 +793,7 @@ export class ElementHandle<
           throw new Error('Element is not a <select> element.');
 
         const options = Array.from(element.options);
-        element.value = undefined;
+        element.value = '';
         for (const option of options) {
           option.selected = values.includes(option.value);
           if (option.selected && !element.multiple) break;
@@ -843,7 +847,7 @@ export class ElementHandle<
         try {
           await fs.promises.access(resolvedPath, fs.constants.R_OK);
         } catch (error) {
-          if (error.code === 'ENOENT')
+          if (error && (error as NodeJS.ErrnoException).code === 'ENOENT')
             throw new Error(`${filePath} does not exist or is not readable`);
         }
 
@@ -952,10 +956,10 @@ export class ElementHandle<
 
     const { offsetX, offsetY } = await this._getOOPIFOffsets(this._frame);
     const quad = result.model.border;
-    const x = Math.min(quad[0], quad[2], quad[4], quad[6]);
-    const y = Math.min(quad[1], quad[3], quad[5], quad[7]);
-    const width = Math.max(quad[0], quad[2], quad[4], quad[6]) - x;
-    const height = Math.max(quad[1], quad[3], quad[5], quad[7]) - y;
+    const x = Math.min(quad[0]!, quad[2]!, quad[4]!, quad[6]!);
+    const y = Math.min(quad[1]!, quad[3]!, quad[5]!, quad[7]!);
+    const width = Math.max(quad[0]!, quad[2]!, quad[4]!, quad[6]!) - x;
+    const height = Math.max(quad[1]!, quad[3]!, quad[5]!, quad[7]!) - y;
 
     return { x: x + offsetX, y: y + offsetY, width, height };
   }
@@ -1014,11 +1018,11 @@ export class ElementHandle<
     assert(boundingBox, 'Node is either not visible or not an HTMLElement');
 
     const viewport = this._page.viewport();
+    assert(viewport);
 
     if (
-      viewport &&
-      (boundingBox.width > viewport.width ||
-        boundingBox.height > viewport.height)
+      boundingBox.width > viewport.width ||
+      boundingBox.height > viewport.height
     ) {
       const newViewport = {
         width: Math.max(viewport.width, Math.ceil(boundingBox.width)),
@@ -1069,6 +1073,9 @@ export class ElementHandle<
   ): Promise<ElementHandle<T> | null> {
     const { updatedSelector, queryHandler } =
       getQueryHandlerAndSelector(selector);
+    if (!queryHandler.queryOne) {
+      return null;
+    }
     return queryHandler.queryOne(this, updatedSelector);
   }
 
@@ -1081,6 +1088,9 @@ export class ElementHandle<
   ): Promise<Array<ElementHandle<T>>> {
     const { updatedSelector, queryHandler } =
       getQueryHandlerAndSelector(selector);
+    if (!queryHandler.queryAll) {
+      return [];
+    }
     return queryHandler.queryAll(this, updatedSelector);
   }
 
@@ -1164,13 +1174,12 @@ export class ElementHandle<
   ): Promise<WrapElementHandle<ReturnType>> {
     const { updatedSelector, queryHandler } =
       getQueryHandlerAndSelector(selector);
+    assert(queryHandler.queryAllArray);
     const arrayHandle = await queryHandler.queryAllArray(this, updatedSelector);
-    const result = await arrayHandle.evaluate<
-      (
-        elements: Element[],
-        ...args: unknown[]
-      ) => ReturnType | Promise<ReturnType>
-    >(pageFunction, ...args);
+    const result = await arrayHandle.evaluate<EvaluateFn<Element[]>>(
+      pageFunction,
+      ...args
+    );
     await arrayHandle.dispose();
     /* This `as` exists for the same reason as the `as` in $eval above.
      * See the comment there for a full explanation.
@@ -1220,7 +1229,7 @@ export class ElementHandle<
     return await this.evaluate(async (element: Element, threshold: number) => {
       const visibleRatio = await new Promise<number>((resolve) => {
         const observer = new IntersectionObserver((entries) => {
-          resolve(entries[0].intersectionRatio);
+          resolve(entries[0]!.intersectionRatio);
           observer.disconnect();
         });
         observer.observe(element);
@@ -1296,8 +1305,8 @@ function computeQuadArea(quad: Array<{ x: number; y: number }>): number {
   */
   let area = 0;
   for (let i = 0; i < quad.length; ++i) {
-    const p1 = quad[i];
-    const p2 = quad[(i + 1) % quad.length];
+    const p1 = quad[i]!;
+    const p2 = quad[(i + 1) % quad.length]!;
     area += (p1.x * p2.y - p2.x * p1.y) / 2;
   }
   return Math.abs(area);
